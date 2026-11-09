@@ -209,10 +209,10 @@ class MovieRecommender:
 
         recommendation_count = min(number_of_recommendations, len(self.movies) - 1)
         recommended_indices = scores.argsort()[::-1][:recommendation_count]
-        recommendations = self.movies.iloc[recommended_indices][
-            ["movieId", "title", "genres"]
-        ].copy()
-        recommendations.insert(3, "similarity", scores[recommended_indices])
+        recommendations = self.movies.iloc[recommended_indices].copy()
+        recommendations.insert(
+            len(recommendations.columns), "similarity", scores[recommended_indices]
+        )
         recommendations["genre_similarity"] = genre_scores[recommended_indices]
         recommendations["tag_similarity"] = tag_scores[recommended_indices]
         recommendations["average_rating"] = self._rating_stats.loc[

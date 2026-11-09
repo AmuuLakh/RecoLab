@@ -1,14 +1,20 @@
 """RecoLab's Streamlit web interface."""
 
 from html import escape
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
+import pandas as pd
+from PIL import Image, ImageDraw
 import streamlit as st
 
 from recommender import MovieRecommender
 
 
 DATASET_PATH = Path("data/processed/movies.csv")
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
 st.set_page_config(
     page_title="RecoLab | Find your next favorite",
@@ -57,10 +63,10 @@ def inject_styles() -> None:
         .brand { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; font-weight: 700; letter-spacing: -.03em; }
         .brand span { color: var(--pink); }
         .eyebrow { color: var(--pink); font-size: .75rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
-        .hero { padding: 3.5rem 0 2.2rem; max-width: 760px; }
-        .hero h1 { font-size: clamp(2.6rem, 6vw, 5rem); letter-spacing: -.065em; line-height: .98; margin: .7rem 0 1.1rem; }
+        .hero { padding: 4.5rem 0 2rem; max-width: 820px; text-align: center; margin: 0 auto; }
+        .hero h1 { font-size: clamp(2.8rem, 7vw, 5.5rem); letter-spacing: -.075em; line-height: .96; margin: .7rem 0 1.1rem; }
         .hero h1 span { background: linear-gradient(100deg, #f8f6ff, #bba8ff 55%, #f27bc4); -webkit-background-clip: text; color: transparent; }
-        .hero p { color: var(--muted); font-size: 1.08rem; line-height: 1.65; max-width: 620px; }
+        .hero p { color: var(--muted); font-size: 1.08rem; line-height: 1.65; max-width: 620px; margin: 0 auto; }
         .search-label { color: var(--muted); font-size: .82rem; font-weight: 600; margin-bottom: .4rem; }
         div[data-baseweb="input"] { background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 12px; }
         div[data-baseweb="input"] input { color: var(--ink); }
@@ -69,6 +75,11 @@ def inject_styles() -> None:
         div[data-testid="stVerticalBlockBorderWrapper"] { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
         .section-title { margin: 2.8rem 0 1rem; font-size: 1.35rem; font-weight: 700; }
         .movie-card { background: linear-gradient(150deg, rgba(48, 43, 76, .9), rgba(24, 22, 38, .95)); border: 1px solid var(--line); border-radius: 15px; min-height: 175px; padding: 1.15rem; }
+        .poster-frame img { border-radius: 13px; box-shadow: 0 18px 34px rgba(0,0,0,.32); transition: transform .2s ease, box-shadow .2s ease; }
+        .poster-frame img:hover { transform: translateY(-7px) scale(1.02); box-shadow: 0 26px 42px rgba(0,0,0,.46); }
+        .poster-title { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: .98rem; font-weight: 600; line-height: 1.2; margin-top: .8rem; }
+        .poster-meta { color: var(--muted); font-size: .76rem; margin-top: .35rem; }
+        .rail-label { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 1.8rem 0 1rem; }
         .movie-number { color: var(--pink); font-size: .75rem; font-weight: 700; }
         .movie-title { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 1.08rem; font-weight: 600; line-height: 1.2; margin: .5rem 0 .7rem; }
         .movie-genres { color: var(--muted); font-size: .82rem; line-height: 1.5; }
@@ -81,23 +92,89 @@ def inject_styles() -> None:
     )
 
 
+def poster_url(movie) -> str | None:
+    """Build a TMDB poster URL when the normalized catalogue has one."""
+    poster_path = str(movie.get("poster_path", "") or "").strip()
+    if not poster_path or poster_path == "nan":
+        return None
+    return f"{TMDB_IMAGE_BASE}{poster_path}"
+
+
+@st.cache_data(show_spinner=False)
+def load_poster(url: str) -> bytes | None:
+    """Fetch a poster on the server so browser cross-origin rules do not block it."""
+    request = Request(url, headers={"User-Agent": "RecoLab/1.0"})
+    try:
+        with urlopen(request, timeout=10) as response:
+            return response.read()
+    except (HTTPError, URLError, TimeoutError):
+        return None
+
+
+def fallback_poster(movie) -> bytes:
+    """Create a small branded poster when a remote image is unavailable."""
+    title = str(movie["title"])[:42]
+    genres = " · ".join(
+        genre
+        for genre in str(movie["genres"]).split("|")
+        if genre != "(no genres listed)"
+    )[:60]
+    image = Image.new("RGB", (500, 750), "#17142b")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((250, -90, 610, 270), fill="#332b62")
+    draw.ellipse((-170, 490, 260, 920), fill="#3b1f50")
+    draw.text((42, 48), "RECOLAB", fill="#f27bc4", stroke_width=0)
+    draw.text((42, 500), title, fill="#f7f7fb")
+    draw.text((42, 548), genres, fill="#bba8ff")
+    draw.text((42, 690), "POSTER UNAVAILABLE", fill="#a7a5b8")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def poster_bytes(movie) -> bytes:
+    """Return a remote poster or an attractive local fallback."""
+    poster = poster_url(movie)
+    if poster:
+        image = load_poster(poster)
+        if image:
+            return image
+    return fallback_poster(movie)
+
+
 def render_movie_card(movie, position: int) -> None:
     genres = " · ".join(
         genre for genre in str(movie["genres"]).split("|") if genre != "(no genres listed)"
     )
     similarity = f"{float(movie['similarity']) * 100:.0f}% match"
+    st.image(poster_bytes(movie), use_container_width=True)
     st.markdown(
         f"""
-        <div class="movie-card">
-            <div class="movie-number">0{position}</div>
-            <div class="movie-title">{escape(str(movie["title"]))}</div>
-            <div class="movie-genres">{escape(genres or "Genre not available")}</div>
-                <div class="score">{similarity} · hybrid match</div>
-                <div class="movie-genres" style="margin-top:.7rem">{escape(str(movie["explanation"]))}</div>
-        </div>
+        <div class="poster-title">{escape(str(movie["title"]))}</div>
+        <div class="poster-meta">{escape(genres or "Genre not available")}</div>
+        <div class="score">{similarity} · hybrid match</div>
+        <div class="movie-genres" style="margin-top:.65rem">{escape(str(movie["explanation"]))}</div>
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_featured_rail(recommender: MovieRecommender) -> None:
+    """Show a poster-led discovery rail before a search is performed."""
+    featured = recommender.movies.copy()
+    if "vote_count" in featured.columns:
+        featured["vote_count"] = pd.to_numeric(featured["vote_count"], errors="coerce").fillna(0)
+        featured = featured.sort_values("vote_count", ascending=False)
+    featured = featured.head(6)
+    st.markdown('<div class="rail-label">A few films to get you started</div>', unsafe_allow_html=True)
+    columns = st.columns(6)
+    for column, (_, movie) in zip(columns, featured.iterrows()):
+        with column:
+            st.image(poster_bytes(movie), use_container_width=True)
+            st.markdown(
+                f'<div class="poster-title">{escape(str(movie["title"]))}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def main() -> None:
@@ -108,9 +185,9 @@ def main() -> None:
     st.markdown(
         """
         <div class="hero">
-            <div class="eyebrow">Your personal movie compass</div>
-            <h1>Find a film<br><span>worth remembering.</span></h1>
-            <p>Tell us what you are in the mood for. RecoLab blends genres, community tags, and ratings to find films with a similar DNA.</p>
+            <div class="eyebrow">AI-powered movie discovery</div>
+            <h1>Discover your next<br><span>favorite movie.</span></h1>
+            <p>Search a catalogue of thousands of films and let RecoLab find your next great watch using genres, community tags, and ratings.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -134,10 +211,7 @@ def main() -> None:
 
     matches = st.session_state.get("matches")
     if matches is None or matches.empty:
-        st.markdown(
-            '<div class="section-title">Start with a favorite</div><div class="note">Search above to unlock a personalized row of recommendations.</div>',
-            unsafe_allow_html=True,
-        )
+        render_featured_rail(recommender)
         return
 
     st.markdown('<div class="section-title">Choose your starting movie</div>', unsafe_allow_html=True)
