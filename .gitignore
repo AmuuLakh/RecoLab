@@ -5,3 +5,8 @@ __pycache__/
 .env
 .vscode/
 .pytest_cache/
+
+# Large downloaded datasets and generated normalized data
+Movies dataset.zip
+data/Movies dataset/
+data/processed/

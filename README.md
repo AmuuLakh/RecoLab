@@ -21,9 +21,19 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The web app opens a cinematic interface where you can search for a movie,
+The web app opens a cinematic interface using the prepared Movies Dataset,
+where you can search for a movie,
 choose an exact title, and discover similar films. For the command-line
 version, run `python recommend.py`.
+
+To prepare the larger dataset after downloading it, run:
+
+```powershell
+python prepare_data.py
+```
+
+The original files remain in `data/Movies dataset/`; normalized application
+files are written to `data/processed/`.
 
 You can replace the catalogue without changing the recommendation engine:
 

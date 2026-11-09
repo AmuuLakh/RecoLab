@@ -8,7 +8,7 @@ import streamlit as st
 from recommender import MovieRecommender
 
 
-DATASET_PATH = Path("data/movies.csv")
+DATASET_PATH = Path("data/processed/movies.csv")
 
 st.set_page_config(
     page_title="RecoLab | Find your next favorite",
@@ -23,8 +23,8 @@ def load_recommender() -> MovieRecommender:
     """Load the recommendation engine once for the current app session."""
     return MovieRecommender.from_csv(
         DATASET_PATH,
-        ratings_path=Path("data/ratings.csv"),
-        tags_path=Path("data/tags.csv"),
+        ratings_path=Path("data/processed/ratings.csv"),
+        tags_path=Path("data/processed/tags.csv"),
     )
 
 
