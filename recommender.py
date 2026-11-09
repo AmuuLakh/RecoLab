@@ -1,4 +1,4 @@
-"""Content-based movie recommendations using MovieLens genres."""
+"""Content-based movie recommendations using a compatible movie catalogue."""
 
 from pathlib import Path
 
@@ -7,18 +7,53 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
+MOVIE_COLUMNS = ("movieId", "title", "genres")
+
+
+def load_movies(path: str | Path) -> pd.DataFrame:
+    """Load and validate a movie catalogue from a CSV file.
+
+    Compatible catalogues must provide ``movieId``, ``title``, and ``genres``.
+    Other columns are preserved so they can be used by future recommenders.
+    """
+    movies = pd.read_csv(path)
+    missing_columns = set(MOVIE_COLUMNS).difference(movies.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Movies data is missing required columns: {missing}")
+    if movies.empty:
+        raise ValueError(f"Movies data is empty: {path}")
+    if movies["movieId"].duplicated().any():
+        raise ValueError("Movies data must contain unique movieId values")
+
+    movies = movies.copy()
+    movies["title"] = movies["title"].fillna("").astype(str).str.strip()
+    movies["genres"] = movies["genres"].fillna("(no genres listed)").astype(str)
+    if movies["title"].eq("").any():
+        raise ValueError("Movies data contains a movie with an empty title")
+    return movies
+
+
 class MovieRecommender:
     """Recommend movies with similar genre profiles."""
 
     def __init__(self, movies: pd.DataFrame) -> None:
-        required_columns = {"movieId", "title", "genres"}
-        missing_columns = required_columns.difference(movies.columns)
+        missing_columns = set(MOVIE_COLUMNS).difference(movies.columns)
         if missing_columns:
             missing = ", ".join(sorted(missing_columns))
             raise ValueError(f"Movies data is missing required columns: {missing}")
+        if movies.empty:
+            raise ValueError("Movies data cannot be empty")
+        if movies["movieId"].duplicated().any():
+            raise ValueError("Movies data must contain unique movieId values")
 
         self.movies = movies.reset_index(drop=True).copy()
-        self.movies["genres"] = self.movies["genres"].fillna("(no genres listed)")
+        self.movies["title"] = self.movies["title"].fillna("").astype(str).str.strip()
+        self.movies["genres"] = self.movies["genres"].fillna(
+            "(no genres listed)"
+        ).astype(str)
+        if self.movies["title"].eq("").any():
+            raise ValueError("Movies data contains a movie with an empty title")
 
         self._vectorizer = CountVectorizer(
             tokenizer=lambda value: value.split("|"),
@@ -35,8 +70,8 @@ class MovieRecommender:
 
     @classmethod
     def from_csv(cls, path: str | Path = "data/movies.csv") -> "MovieRecommender":
-        """Create a recommender from a MovieLens movies CSV file."""
-        return cls(pd.read_csv(path))
+        """Create a recommender from any compatible movie catalogue CSV."""
+        return cls(load_movies(path))
 
     def search_movies(self, query: str, limit: int = 10) -> pd.DataFrame:
         """Find movie titles containing ``query`` without regular expressions."""

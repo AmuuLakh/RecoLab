@@ -1,10 +1,19 @@
 """Interactive command-line interface for RecoLab recommendations."""
 
+import argparse
+
 from recommender import MovieRecommender
 
 
 def main() -> None:
-    recommender = MovieRecommender.from_csv()
+    parser = argparse.ArgumentParser(description="Find similar movies in a CSV catalogue.")
+    parser.add_argument(
+        "--movies",
+        default="data/movies.csv",
+        help="Path to a compatible movie catalogue CSV file.",
+    )
+    args = parser.parse_args()
+    recommender = MovieRecommender.from_csv(args.movies)
 
     print("RecoLab Movie Recommender")
     print("Type a movie title, or press Enter to exit.")
