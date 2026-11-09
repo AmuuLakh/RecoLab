@@ -8,8 +8,8 @@ limitation.
 ## Current features
 
 - Search the MovieLens catalogue by title.
-- Recommend similar movies using cosine similarity.
-- Display a similarity score and the matching genres.
+- Recommend similar movies using a hybrid score from genres, tags, and ratings.
+- Display a similarity score and an explanation for every recommendation.
 - Explore ratings, genres, and popular movies with `explore_data.py`.
 
 ## Run locally
@@ -18,8 +18,12 @@ limitation.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python recommend.py
+streamlit run app.py
 ```
+
+The web app opens a cinematic interface where you can search for a movie,
+choose an exact title, and discover similar films. For the command-line
+version, run `python recommend.py`.
 
 You can replace the catalogue without changing the recommendation engine:
 
@@ -48,7 +52,7 @@ exit.
 recolab/
 ├── data/                 # MovieLens data files
 ├── explore_data.py       # Dataset exploration script
-├── recommender.py        # Reusable recommendation engine
+├── recommender.py        # Hybrid recommendation engine
 ├── recommend.py          # Command-line interface
 └── requirements.txt      # Python dependencies
 ```
